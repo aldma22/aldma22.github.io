@@ -28,6 +28,14 @@ h1 small{font-family:"IBM Plex Sans KR",sans-serif;font-weight:600;font-size:.72
 .pl.w i{background:radial-gradient(circle at 35% 30%,#fff,#cfcfcf 70%);box-shadow:inset 0 0 0 1px #0002}
 .pl b{font-weight:600;font-size:.95rem}
 .pl em{font-style:normal;font-size:.8rem;margin-left:auto}
+.clk{display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums;font-weight:600;font-size:.95rem}
+.clk .sec{min-width:2ch;text-align:right}
+.clk .ch{letter-spacing:1px;font-size:.7rem;color:var(--accent)}
+.clk .ch s{text-decoration:none;color:var(--forb);opacity:.5}
+.clk.warn .sec{color:var(--forb)}
+.tbar{height:4px;border-radius:2px;background:var(--edge);overflow:hidden;max-width:728px;width:calc(100% - 32px);margin:2px auto 0}
+.tbar i{display:block;height:100%;width:100%;background:var(--accent);transform-origin:left;transition:transform .25s linear}
+.tbar.warn i{background:var(--forb)}
 main{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:6px 12px}
 #wrap{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
 canvas{display:block;border-radius:6px;box-shadow:0 2px 0 var(--wood2),0 10px 24px #0003;touch-action:manipulation;cursor:pointer}
@@ -66,8 +74,10 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none
   <div class="score" aria-live="polite"><span class="lbl" id="sL">흑</span><span id="sA">0</span>:<span id="sB">0</span><span class="lbl" id="sR">백</span></div>
 </header>
 <div class="players">
-  <div class="pl b" id="pB"><i></i><b>흑</b><em id="nB">차례</em></div>
-  <div class="pl w" id="pW"><i></i><b>백</b><em id="nW"></em></div>
+  <div class="pl b" id="pB"><i></i><b>흑</b><em id="nB">차례</em><span class="clk" id="kB"></span></div>
+  <div class="pl w" id="pW"><i></i><b>백</b><em id="nW"></em><span class="clk" id="kW"></span></div>
+</div>
+<div class="tbar" id="tbar"><i id="tfill"></i>
 </div>
 <main><div id="wrap"><canvas id="cv" aria-label="오목판"></canvas></div></main>
 <div class="legend" id="legend">흑은 <b>✕</b> 자리(3·3, 4·4, 장목)에 둘 수 없어요</div>
@@ -85,6 +95,7 @@ input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);flex:none
 <div class="modal" id="mSet"><div class="card set">
   <h3>⚙️ 설정</h3>
   <div class="row"><div>판 크기</div><div class="seg" data-k="size"><button data-v="13">13×13</button><button data-v="15">15×15</button></div></div>
+  <div class="row"><div>초읽기<small>한 수 제한 시간 · 3번 넘기면 패배</small></div><div class="seg" data-k="limit"><button data-v="0">끔</button><button data-v="10">10초</button><button data-v="20">20초</button><button data-v="30">30초</button></div></div>
   <div class="row"><div>흑 금수<small>흑은 3·3, 4·4, 장목(6목 이상) 금지</small></div><input type="checkbox" id="cRenju"></div>
   <div class="row sub" id="rShow"><div>금수 자리 표시<small>흑 차례에 둘 수 없는 곳을 ✕로 표시</small></div><input type="checkbox" id="cShow"></div>
   <div class="row"><div>백 장목 승리 인정<small>끄면 백도 정확히 5목만 승리</small></div><input type="checkbox" id="cWOver"></div>
@@ -306,13 +317,13 @@ const E=new Function(document.getElementById('engsrc').textContent+';return E;')
 
 const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-const cfg=Object.assign({size:15,renju:true,show:true,whiteOver:true,ai:false,human:1,level:1},store.get('omokR2.cfg',{}));
+const cfg=Object.assign({size:15,renju:true,show:true,whiteOver:true,ai:false,human:1,level:1,limit:20},store.get('omokR2.cfg',{}));
 if(cfg.level>2)cfg.level=2;
 let score=Object.assign({me:0,ai:0,b:0,w:0},store.get('omokR.score',{}));
 let moves=[],turn=1,over=false,win=null,thinking=false,forb=new Map(),hover=null,gen=0;
 
 function applyCfg(){E.st.renju=cfg.renju;E.st.whiteOver=cfg.whiteOver;}
-function newGame(){if(thinking&&worker){worker.terminate();pend.clear();worker=mkWorker();}gen++;applyCfg();E.reset(cfg.size);moves=[];turn=1;over=false;win=null;thinking=false;hover=null;refresh();maybeAI();}
+function newGame(){strikes={1:0,2:0};if(thinking&&worker){worker.terminate();pend.clear();worker=mkWorker();}gen++;applyCfg();E.reset(cfg.size);moves=[];turn=1;over=false;win=null;thinking=false;hover=null;refresh();maybeAI();}
 const aiTurn=()=>cfg.ai&&turn!==cfg.human;
 function calcForb(){forb.clear();if(!cfg.renju||over||turn!==1||aiTurn())return;const N=cfg.size;
   for(let y=0;y<N;y++)for(let x=0;x<N;x++){const f=E.forbidden(x,y);if(f)forb.set(y*N+x,f);}}
@@ -326,10 +337,43 @@ function refresh(){
   else{$('sL').textContent='흑';$('sR').textContent='백';$('sA').textContent=score.b;$('sB').textContent=score.w;}
   $('legend').style.visibility=cfg.renju?'visible':'hidden';
   $('bUndo').disabled=thinking||over||!moves.length||(cfg.ai&&!moves.some(m=>m.c===cfg.human));
+  syncClock();
   draw();
 }
 let tt;function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),1400);}
 
+const MAXS=3;let strikes={1:0,2:0},clkKey='',deadline=0,pausedAt=0,clkT=null;
+function clockOn(){return cfg.limit>0&&!over&&!thinking&&!aiTurn();}
+function syncClock(){
+  const key=gen+'|'+moves.length+'|'+turn+'|'+over+'|'+thinking;
+  if(key!==clkKey){clkKey=key;deadline=Date.now()+cfg.limit*1000;}
+  if(!clkT)clkT=setInterval(tick,200);
+  paintClock();
+}
+function tick(){
+  if(!cfg.limit)return paintClock();
+  const paused=$('mSet').classList.contains('show')||$('mEnd').classList.contains('show')||document.hidden;
+  if(paused){if(!pausedAt)pausedAt=Date.now();return;}
+  if(pausedAt){deadline+=Date.now()-pausedAt;pausedAt=0;}
+  if(clockOn()&&Date.now()>=deadline){
+    strikes[turn]++;
+    if(strikes[turn]>=MAXS){over=true;const w=3-turn;finish(w,'time');refresh();return;}
+    toast('시간 초과! 남은 기회 '+(MAXS-strikes[turn])+'번');deadline=Date.now()+cfg.limit*1000;
+  }
+  paintClock();
+}
+function paintClock(){
+  const on=cfg.limit>0;$('tbar').style.visibility=on?'visible':'hidden';
+  const rem=Math.max(0,deadline-Date.now()),sec=Math.ceil(rem/1000),active=clockOn();
+  const warn=active&&sec<=5;
+  $('tfill').style.transform='scaleX('+(active?rem/(cfg.limit*1000):0)+')';$('tbar').classList.toggle('warn',warn);
+  for(const c of [1,2]){const el=$(c===1?'kB':'kW');
+    const human=!cfg.ai||cfg.human===c;
+    if(!on||!human){el.innerHTML='';continue;}
+    const left=MAXS-strikes[c];
+    el.innerHTML=(active&&turn===c?'<span class="sec">'+sec+'</span>':'')+'<span class="ch" title="남은 기회">'+'●'.repeat(left)+'<s>'+'●'.repeat(MAXS-left)+'</s></span>';
+    el.classList.toggle('warn',warn&&turn===c);}
+}
 function place(x,y){
   const c=turn;
   if(c===1&&cfg.renju){const f=E.forbidden(x,y);if(f){toast('금수: '+f+' 자리예요');return false;}}
@@ -340,11 +384,12 @@ function place(x,y){
   else turn=3-c;
   refresh();return true;
 }
-function finish(c){
+function finish(c,why){
   let t,p;
   if(!c){t='무승부!';p='빈 칸이 모두 채워졌어요.';}
   else if(cfg.ai){const meWin=c===cfg.human;meWin?score.me++:score.ai++;t=meWin?'승리!':'패배';p=meWin?'AI를 이겼어요.':'AI가 5목을 먼저 만들었어요.';}
   else{c===1?score.b++:score.w++;t=(c===1?'흑':'백')+' 승리!';p='5목 완성!';}
+  if(why==='time')p=(c===1?'백':'흑')+'이 초읽기를 3번 넘겼어요.';
   store.set('omokR.score',score);
   $('eT').textContent=t;$('eP').textContent=p;
   setTimeout(()=>$('mEnd').classList.add('show'),650);
